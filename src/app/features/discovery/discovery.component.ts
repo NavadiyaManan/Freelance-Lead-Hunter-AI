@@ -4,6 +4,7 @@ import { Table, TableLazyLoadEvent, TableModule } from 'primeng/table';
 import { Business } from '../../core/models/business.model';
 import { BusinessDiscoveryFilters, BusinessDiscoveryLead, BusinessDiscoverySearchRequest } from '../../core/models/business-discovery.model';
 import { BusinessDiscoveryApiService } from '../../core/services/business-discovery-api.service';
+import { MasterDataApiService } from '../../core/services/master-data-api.service';
 
 @Component({
   selector: 'app-discovery',
@@ -57,6 +58,7 @@ import { BusinessDiscoveryApiService } from '../../core/services/business-discov
 export class DiscoveryComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly api = inject(BusinessDiscoveryApiService);
+  private readonly masterData = inject(MasterDataApiService);
   protected readonly options = signal<BusinessDiscoveryFilters | null>(null);
   protected readonly loading = signal(false);
   protected readonly filtersLoading = signal(true);
@@ -89,14 +91,21 @@ export class DiscoveryComponent implements OnInit {
   protected readonly sourceOptions = computed(() => this.options()?.sources ?? []);
   protected readonly pageSize = computed(() => this.form.controls.maxResults.value ?? 20);
 
-  ngOnInit(): void { this.loadFilters(); }
+  ngOnInit(): void {
+    this.loadFilters();
+  this.form.controls.country.valueChanges.subscribe(country => { this.form.controls.region.setValue('', { emitEvent: false }); this.form.controls.city.setValue('', { emitEvent: false }); this.options.update(v => v ? { ...v, states: [], cities: [] } : v); const selected = this.countryRecords.find(c => c.name === country); if (selected) this.masterData.getStates(selected.id).subscribe({ next: states => { this.stateRecords = states; this.options.update(v => v ? { ...v, states: states.map(s => s.name) } : v); }, error: e => this.error.set(this.masterData.message(e)) }); });
+    this.form.controls.region.valueChanges.subscribe(region => { this.form.controls.city.setValue('', { emitEvent: false }); this.options.update(v => v ? { ...v, cities: [] } : v); const selected = this.stateRecords.find(s => s.name === region); if (selected) this.masterData.getCities(selected.id).subscribe({ next: cities => this.options.update(v => v ? { ...v, cities: cities.map(c => c.name) } : v), error: e => this.error.set(this.masterData.message(e)) }); });
+  }
+  private countryRecords: Array<{id:number;name:string}> = [];
+  private stateRecords: Array<{id:number;name:string}> = [];
+  private websiteStatusRecords: Array<{id:number;name:string;code:string}> = [];
 
   protected loadFilters(): void {
     this.filtersLoading.set(true);
     this.error.set(null);
-    this.api.getFilters().subscribe({
-      next: values => { this.options.set(values); this.filtersLoading.set(false); },
-      error: error => { this.error.set(this.api.message(error)); this.filtersLoading.set(false); }
+    this.masterData.getDropdowns().subscribe({
+      next: values => { this.countryRecords = values.countries; this.stateRecords = []; this.websiteStatusRecords = values.websiteStatuses; this.options.set({ categories: values.businessCategories, leadStatuses: values.leadStatuses, countries: values.countries.map(x => x.name), states: [], cities: [], websiteStatuses: values.websiteStatuses.map(x => x.code), sources: values.leadSources.map(x => x.name) }); this.filtersLoading.set(false); },
+      error: error => { this.error.set(this.masterData.message(error)); this.filtersLoading.set(false); }
     });
   }
 
@@ -145,11 +154,7 @@ export class DiscoveryComponent implements OnInit {
   }
   protected initials(name: string): string { return name.split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase(); }
 
-  protected websiteStatusLabel(status: string): string {
-    if (status === 'VERIFIED') return 'Website verified';
-    if (status === 'MISSING' || status === 'NO_WEBSITE') return 'Missing';
-    return status === 'UNVERIFIED' ? 'Unverified' : status;
-  }
+  protected websiteStatusLabel(status: string): string { const code = status === 'NO_WEBSITE' ? 'MISSING' : status; return this.websiteStatusRecords.find(item => item.code === code)?.name ?? status; }
 
   private loadPageData(pageNumber: number, pageSize: number, sortBy: string, sortOrder: 'asc' | 'desc'): void {
     const form = this.form.getRawValue();

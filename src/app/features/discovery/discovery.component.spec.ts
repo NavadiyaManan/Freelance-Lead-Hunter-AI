@@ -2,11 +2,13 @@ import { ComponentFixture, TestBed } from "@angular/core/testing";
 import { of, Subject, throwError } from "rxjs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BusinessDiscoveryApiService } from "../../core/services/business-discovery-api.service";
+import { MasterDataApiService } from "../../core/services/master-data-api.service";
 import { DiscoveryComponent } from "./discovery.component";
 
 describe("DiscoveryComponent", () => {
   let fixture: ComponentFixture<DiscoveryComponent>;
   let api: { getFilters: ReturnType<typeof vi.fn>; search: ReturnType<typeof vi.fn>; message: ReturnType<typeof vi.fn> };
+  let master: { getDropdowns: ReturnType<typeof vi.fn>; getStates: ReturnType<typeof vi.fn>; getCities: ReturnType<typeof vi.fn>; message: ReturnType<typeof vi.fn> };
 
   const filters = {
     categories: [{ id: 3, name: "Beauty & hair salon", code: "BEAUTY_HAIR_SALON" }],
@@ -18,9 +20,10 @@ describe("DiscoveryComponent", () => {
 
   beforeEach(async () => {
     api = { getFilters: vi.fn(() => of(filters)), search: vi.fn(() => of(emptyResult)), message: vi.fn(() => "API error") };
+    master = { getDropdowns: vi.fn(() => of({ businessCategories: filters.categories, leadStatuses: filters.leadStatuses, leadSources: [{id:1,name:"Development seed",code:"DEVELOPMENT_SEED"}], websiteStatuses: [{id:1,name:"No website",code:"MISSING"},{id:2,name:"Unverified",code:"UNVERIFIED"}], countries: [{id:1,name:"India",code:"IN",isActive:true}] })), getStates: vi.fn(() => of([{id:2,countryId:1,name:"Gujarat",code:"GJ",isActive:true}])), getCities: vi.fn(() => of([{id:3,stateId:2,name:"Bhavnagar",code:"BHAVNAGAR",isActive:true}])), message: vi.fn(() => "API error") };
     await TestBed.configureTestingModule({
       imports: [DiscoveryComponent],
-      providers: [{ provide: BusinessDiscoveryApiService, useValue: api }]
+      providers: [{ provide: BusinessDiscoveryApiService, useValue: api }, { provide: MasterDataApiService, useValue: master }]
     }).compileComponents();
     fixture = TestBed.createComponent(DiscoveryComponent);
     fixture.detectChanges();
@@ -43,7 +46,7 @@ describe("DiscoveryComponent", () => {
     (fixture.nativeElement.querySelector('button[type="submit"]') as HTMLButtonElement).click();
     fixture.detectChanges();
 
-    expect(api.getFilters).toHaveBeenCalledOnce();
+    expect(master.getDropdowns).toHaveBeenCalledOnce();
     expect(api.search).toHaveBeenCalledWith(expect.objectContaining({ country: "India", categoryId: 3, keyword: "family salon", pageNumber: 1 }));
     expect(fixture.nativeElement.textContent).toContain("Source: existing database");
   });
