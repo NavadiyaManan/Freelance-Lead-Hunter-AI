@@ -1,47 +1,50 @@
-import { Component, computed, inject, signal } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Table, TableModule } from 'primeng/table';
-import { Business, DiscoveryFilters } from '../../core/models/business.model';
-import { LeadService } from '../../core/services/lead.service';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
+import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
+import { Table, TableLazyLoadEvent, TableModule } from 'primeng/table';
+import { Business } from '../../core/models/business.model';
+import { BusinessDiscoveryFilters, BusinessDiscoveryLead, BusinessDiscoverySearchRequest } from '../../core/models/business-discovery.model';
+import { BusinessDiscoveryApiService } from '../../core/services/business-discovery-api.service';
 
 @Component({
   selector: 'app-discovery',
   imports: [ReactiveFormsModule, TableModule],
   template: `
-    <div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-icon"><i class="pi pi-compass"></i></span> FIND YOUR NEXT CLIENT</div><h1>Business Discovery</h1><p class="subtitle">Find local businesses that could use your expertise.</p></div><div class="local-tag"><span></span> LOCAL DEMO DATA</div></div>
-    <div class="notice"><i class="pi pi-info-circle"></i><span><strong>Demo mode:</strong> Searches run against local sample records. No Google Maps, OpenStreetMap, or other external services are contacted.</span></div>
+  <div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-icon"><i class="pi pi-compass"></i></span> FIND YOUR NEXT CLIENT</div><h1>Business Discovery</h1><p class="subtitle">Find local businesses that could use your expertise.</p></div><div class="local-tag"><span></span> SAVED DATABASE LEADS</div></div>
+    <div class="notice"><i class="pi pi-info-circle"></i><span><strong>Saved lead search:</strong> Results come from existing database records. No Google Maps, OpenStreetMap, or other external discovery services are contacted.</span></div>
     <section class="search-card">
       <div class="section-title"><div class="title-icon"><i class="pi pi-sliders-h"></i></div><div><h2>Search filters</h2><p>Define the businesses you want to find</p></div><span class="required-note"><i class="pi pi-asterisk"></i> Required fields</span></div>
       <form [formGroup]="form" (ngSubmit)="search()" novalidate>
         <div class="form-grid">
-          <label class="field"><span>Country <b>*</b></span><select formControlName="country"><option value="">Select country</option>@for (country of countries; track country) { <option [value]="country">{{ country }}</option> }</select>@if (form.controls.country.touched && form.controls.country.invalid) {<small class="error">Choose a country.</small>}</label>
-          <label class="field"><span>State / Region</span><input formControlName="region" placeholder="e.g. Gujarat" autocomplete="address-level1"></label>
-          <label class="field"><span>City / Location <b>*</b></span><input formControlName="city" placeholder="e.g. Bhavnagar" autocomplete="address-level2">@if (form.controls.city.touched && form.controls.city.invalid) {<small class="error">Enter a city or location.</small>}</label>
-          <label class="field"><span>Business category <b>*</b></span><select formControlName="category">@for (category of categories; track category) { <option [value]="category">{{ category }}</option> }</select></label>
+          <label class="field"><span>Country</span><select formControlName="country"><option value="">All countries</option>@for (country of countryOptions(); track country) { <option [value]="country">{{ country }}</option> }</select></label>
+          <label class="field"><span>State / Region</span><select formControlName="region"><option value="">All states / regions</option>@for (state of stateOptions(); track state) { <option [value]="state">{{ state }}</option> }</select></label>
+          <label class="field"><span>City / Location</span><select formControlName="city"><option value="">All cities</option>@for (city of cityOptions(); track city) { <option [value]="city">{{ city }}</option> }</select></label>
+          <label class="field"><span>Business category</span><select formControlName="categoryId"><option [ngValue]="null">All categories</option>@for (category of categoryOptions(); track category.id) { <option [ngValue]="category.id">{{ category.name }}</option> }</select></label>
           <label class="field"><span>Business keyword</span><div class="input-with-icon"><i class="pi pi-search"></i><input formControlName="keyword" placeholder="e.g. family salon"></div></label>
-          <label class="field"><span>Website status</span><select formControlName="websiteStatus"><option>All businesses</option><option value="Verified">Website verified</option><option>No website</option><option>Unverified</option></select></label>
-          <label class="field"><span>Minimum rating</span><select formControlName="minimumRating"><option [ngValue]="null">Any rating</option><option [ngValue]="3">3.0+</option><option [ngValue]="3.5">3.5+</option><option [ngValue]="4">4.0+</option><option [ngValue]="4.5">4.5+</option></select><small class="hint">Unrated demo records are excluded by a rating filter.</small></label>
+          <label class="field"><span>Website status</span><select formControlName="websiteStatus"><option value="">All statuses</option>@for (status of websiteStatusOptions(); track status) { <option [value]="status">{{ websiteStatusLabel(status) }}</option> }</select></label>
+          <label class="field"><span>Lead status</span><select formControlName="statusId"><option [ngValue]="null">All lead statuses</option>@for (status of leadStatusOptions(); track status.id) { <option [ngValue]="status.id">{{ status.name }}</option> }</select></label>
+          <label class="field"><span>Minimum rating</span><select formControlName="minimumRating"><option [ngValue]="null">Any rating</option><option [ngValue]="3">3.0+</option><option [ngValue]="3.5">3.5+</option><option [ngValue]="4">4.0+</option><option [ngValue]="4.5">4.5+</option></select><small class="hint">Unrated records are excluded by a rating filter.</small></label>
           <label class="field"><span>Maximum results</span><select formControlName="maxResults"><option [ngValue]="10">10 results</option><option [ngValue]="20">20 results</option><option [ngValue]="50">50 results</option><option [ngValue]="100">100 results</option></select></label>
-          <label class="field"><span>Discovery source</span><select formControlName="source"><option>Manual import</option><option>Google Maps (future integration)</option><option>OpenStreetMap (future integration)</option></select><small class="hint">External sources are placeholders in Phase 1.</small></label>
+          <label class="field"><span>Discovery source</span><select formControlName="source"><option value="">All sources</option>@for (source of sourceOptions(); track source) { <option [value]="source">{{ source }}</option> }</select></label>
         </div>
-        <div class="form-actions"><span class="demo-caption"><i class="pi pi-database"></i> 13 manually researched demo records available</span><div><button type="button" class="secondary-button" (click)="reset()"><i class="pi pi-refresh"></i> Reset filters</button><button type="submit" class="primary-button"><i class="pi pi-search"></i> Search businesses</button></div></div>
+        <div class="form-actions"><span class="demo-caption"><i class="pi pi-database"></i> Existing saved lead records</span><div><button type="button" class="secondary-button" (click)="reset()"><i class="pi pi-refresh"></i> Reset filters</button><button type="submit" class="primary-button" [disabled]="loading()"><i class="pi pi-search"></i> Search businesses</button></div></div>
       </form>
     </section>
+    @if (error()) { <div class="notice error-alert" role="alert"><i class="pi pi-exclamation-triangle"></i><span>{{ error() }}</span><button type="button" class="secondary-button" (click)="loadFilters()">Retry filters</button></div> }
     @if (hasSearched()) {
       <section class="results-card">
-        <div class="results-heading"><div><div class="results-title-line"><h2>Search results</h2><span class="count-badge">{{ filteredResults().length }}</span></div><p>{{ filteredResults().length }} matching businesses <span class="dot-separator">&mdash;</span> Results are local demo records</p></div><button class="export-button" (click)="exportCsv()" [disabled]="filteredResults().length === 0"><i class="pi pi-download"></i> Export CSV</button></div>
-        <div class="table-tools"><div class="global-search"><i class="pi pi-search"></i><input placeholder="Search results..." aria-label="Search result names, categories, and city" (input)="applyGlobalSearch($event, dt)"></div><div class="filter-tools"><label><span>Category</span><select aria-label="Filter by category" (change)="setTableFilter($event, 'category')"><option value="">All categories</option><option value="salon">Beauty & hair salons</option></select></label><label><span>Country</span><select aria-label="Filter by country" (change)="setTableFilter($event, 'country')"><option value="">All countries</option>@for (country of countries; track country) { <option [value]="country">{{ country }}</option> }</select></label><label><span>Website</span><select aria-label="Filter by website status" (change)="setTableFilter($event, 'websiteStatus')"><option value="">All statuses</option><option>Unverified</option><option value="Verified">Website verified</option><option>No website</option></select></label></div></div>
+        <div class="results-heading"><div><div class="results-title-line"><h2>Search results</h2><span class="count-badge">{{ totalRecords() }}</span></div><p>{{ totalRecords() }} matching saved leads <span class="dot-separator">&mdash;</span> Source: existing database</p></div></div>
+        <div class="table-tools"><div class="global-search"><i class="pi pi-search"></i><input placeholder="Search saved leads..." aria-label="Search result names, categories, location, and source" (input)="applyGlobalSearch($event, dt)"></div><div class="filter-tools"><label><span>Category</span><select aria-label="Filter by category" [value]="tableCategory() ?? ''" (change)="setTableFilter($event, 'category', dt)"><option value="">All categories</option>@for (category of categoryOptions(); track category.id) { <option [value]="category.id">{{ category.name }}</option> }</select></label><label><span>Country</span><select aria-label="Filter by country" [value]="tableCountry()" (change)="setTableFilter($event, 'country', dt)"><option value="">All countries</option>@for (country of countryOptions(); track country) { <option [value]="country">{{ country }}</option> }</select></label><label><span>Website</span><select aria-label="Filter by website status" [value]="tableWebsiteStatus()" (change)="setTableFilter($event, 'websiteStatus', dt)"><option value="">All statuses</option>@for (status of websiteStatusOptions(); track status) { <option [value]="status">{{ websiteStatusLabel(status) }}</option> }</select></label></div></div>
         <div class="table-container">
-          <p-table #dt [value]="filteredResults()" [paginator]="true" [rows]="10" [rowsPerPageOptions]="[10, 20, 50]" [globalFilterFields]="['name','category','country','city','region','source','websiteStatus','leadStatus']" [tableStyle]="{'min-width':'1040px'}" styleClass="discovery-table" aria-label="Business discovery results">
-            <ng-template #header><tr><th pSortableColumn="name">Business name <p-sortIcon field="name" /></th><th pSortableColumn="category">Category <p-sortIcon field="category" /></th><th pSortableColumn="country">Country <p-sortIcon field="country" /></th><th pSortableColumn="city">City <p-sortIcon field="city" /></th><th pSortableColumn="rating">Rating <p-sortIcon field="rating" /></th><th pSortableColumn="reviews">Reviews <p-sortIcon field="reviews" /></th><th pSortableColumn="websiteStatus">Website status <p-sortIcon field="websiteStatus" /></th><th pSortableColumn="leadStatus">Lead status <p-sortIcon field="leadStatus" /></th><th pSortableColumn="source">Source <p-sortIcon field="source" /></th><th>Actions</th></tr></ng-template>
-            <ng-template #body let-business><tr><td><div class="business-name"><span class="business-avatar">{{ initials(business.name) }}</span><div><strong>{{ business.name }}</strong><small>Manually researched demo</small></div></div></td><td><span class="category-label">{{ business.category }}</span></td><td>{{ business.country }}</td><td>{{ business.city }}</td><td><span class="rating-value"><i class="pi pi-star-fill"></i> {{ business.rating ?? 'Not provided' }}</span></td><td>{{ business.reviews ?? 'Not provided' }}</td><td><span class="status-tag unverified"><i class="pi pi-question-circle"></i> {{ business.websiteStatus }}</span></td><td><span class="status-tag lead-new"><span class="status-dot"></span>{{ business.leadStatus }}</span></td><td><span class="source-cell"><i class="pi pi-file"></i>{{ business.source }}</span></td><td><button class="row-action" type="button" [attr.aria-label]="'View ' + business.name" title="Details are coming soon"><i class="pi pi-ellipsis-h"></i></button></td></tr></ng-template>
+          <p-table #dt [value]="filteredResults()" [lazy]="true" [lazyLoadOnInit]="false" [paginator]="true" [rows]="pageSize()" [first]="(pageNumber()-1)*pageSize()" [totalRecords]="totalRecords()" [rowsPerPageOptions]="[10, 20, 50, 100]" [loading]="loading()" [sortField]="sortField()" [sortOrder]="sortOrder()" (onLazyLoad)="onLazyLoad($event)" [tableStyle]="{'min-width':'1040px'}" styleClass="discovery-table" aria-label="Business discovery results">
+            <ng-template #header><tr><th pSortableColumn="businessName">Business name <p-sortIcon field="businessName" /></th><th pSortableColumn="category">Category <p-sortIcon field="category" /></th><th pSortableColumn="country">Country <p-sortIcon field="country" /></th><th pSortableColumn="city">City <p-sortIcon field="city" /></th><th pSortableColumn="rating">Rating <p-sortIcon field="rating" /></th><th pSortableColumn="reviewCount">Reviews <p-sortIcon field="reviewCount" /></th><th pSortableColumn="websiteStatus">Website status <p-sortIcon field="websiteStatus" /></th><th pSortableColumn="leadStatus">Lead status <p-sortIcon field="leadStatus" /></th><th pSortableColumn="source">Source <p-sortIcon field="source" /></th></tr></ng-template>
+            <ng-template #body let-business><tr><td><div class="business-name"><span class="business-avatar">{{ initials(business.name) }}</span><div><strong>{{ business.name }}</strong><small>Saved database lead</small></div></div></td><td><span class="category-label">{{ business.category }}</span></td><td>{{ business.country }}</td><td>{{ business.city }}</td><td><span class="rating-value">@if (business.rating !== null) {<i class="pi pi-star-fill"></i>} {{ business.rating ?? 'Not provided' }}</span></td><td>{{ business.reviews ?? 'Not provided' }}</td><td><span class="status-tag unverified">{{ business.websiteStatus }}</span></td><td><span class="status-tag lead-new">{{ business.leadStatus }}</span></td><td><span class="source-cell"><i class="pi pi-database"></i>{{ business.source }}</span></td></tr></ng-template>
             <ng-template #emptymessage><tr><td colspan="10"><div class="empty-state"><span><i class="pi pi-search"></i></span><strong>No businesses found</strong><p>Try a different location or clear one of your filters.</p></div></td></tr></ng-template>
           </p-table>
         </div>
-        <div class="table-foot"><span><i class="pi pi-shield"></i> No website status has been independently verified.</span><span>Source: manually researched demo data</span></div>
+        <div class="table-foot"><span><i class="pi pi-info-circle"></i> Website status reflects the stored lead status; websites are not checked here.</span><span>Search mode: saved database records</span></div>
       </section>
     } @else {
-      <section class="pre-search"><div class="pre-icon"><i class="pi pi-map-marker"></i></div><h2>Ready to find your next opportunity?</h2><p>Choose a location above and search the sample businesses. You can explore their details and filter the results here.</p><div class="pre-meta"><span><i class="pi pi-database"></i> 13 sample businesses</span><span><i class="pi pi-lock"></i> 100% local demo</span></div></section>
+      <section class="pre-search"><div class="pre-icon"><i class="pi pi-map-marker"></i></div><h2>Ready to find your next opportunity?</h2><p>Search saved lead records by location, category, keyword, website status, rating, source, and pipeline status.</p><div class="pre-meta"><span><i class="pi pi-database"></i> Existing database leads</span><span><i class="pi pi-lock"></i> No external provider calls</span></div></section>
     }
   `,
   styles: [`
@@ -51,55 +54,134 @@ import { LeadService } from '../../core/services/lead.service';
     @media(max-width:600px){.page-heading{align-items:flex-start}.page-heading h1{font-size:21px}.local-tag{font-size:7px}.form-grid{grid-template-columns:1fr;gap:11px}.search-card{padding:14px 13px 0}.form-actions{align-items:flex-start;flex-direction:column;gap:9px;margin:14px -13px 0;padding:10px 13px}.form-actions>div{width:100%;justify-content:flex-end}.required-note{font-size:7px}.table-tools{padding:10px 11px}.filter-tools{gap:6px}.filter-tools label{display:grid;gap:4px}.filter-tools select{width:100%}.results-heading{padding:13px 12px}.table-foot{align-items:flex-start;flex-direction:column;padding:9px 12px}.notice{align-items:flex-start}.notice>.pi{margin-top:2px}}
   `]
 })
-export class DiscoveryComponent {
+export class DiscoveryComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
-  private readonly leads = inject(LeadService);
-  protected readonly countries = ['India', 'USA', 'UK', 'Canada', 'Australia'];
-  protected readonly categories = ['All local businesses', 'Beauty salons', 'Hair salons', 'Restaurants', 'Construction companies', 'Dental clinics', 'Small manufacturers', 'Real estate agencies'];
-  protected readonly form = this.fb.nonNullable.group({
-    country: ['India', Validators.required], region: [''], city: ['Bhavnagar', Validators.required], category: ['All local businesses', Validators.required],
-    keyword: [''], websiteStatus: ['All businesses'], minimumRating: this.fb.control<number | null>(null), maxResults: [20], source: ['Manual import']
+  private readonly api = inject(BusinessDiscoveryApiService);
+  protected readonly options = signal<BusinessDiscoveryFilters | null>(null);
+  protected readonly loading = signal(false);
+  protected readonly filtersLoading = signal(true);
+  protected readonly error = signal<string | null>(null);
+  protected readonly totalRecords = signal(0);
+  protected readonly pageNumber = signal(1);
+  protected readonly sortField = signal('businessName');
+  protected readonly sortOrder = signal(1);
+  protected readonly form = this.fb.group({
+    country: [''], region: [''], city: [''], categoryId: this.fb.control<number | null>(null),
+    keyword: [''], websiteStatus: [''], minimumRating: this.fb.control<number | null>(null),
+    maxResults: [20], source: [''], statusId: this.fb.control<number | null>(null)
   });
   protected readonly hasSearched = signal(false);
   private readonly allResults = signal<Business[]>([]);
-  private readonly categoryFilter = signal('');
-  private readonly countryFilter = signal('');
-  private readonly websiteFilter = signal('');
-  private readonly globalTerm = signal('');
-  protected readonly filteredResults = computed(() => this.allResults().filter((business) =>
-    (!this.categoryFilter() || business.category.toLocaleLowerCase().includes('salon')) &&
-    (!this.countryFilter() || business.country === this.countryFilter()) &&
-    (!this.websiteFilter() || business.websiteStatus === this.websiteFilter()) &&
-    (!this.globalTerm() || `${business.name} ${business.category} ${business.country} ${business.city}`.toLocaleLowerCase().includes(this.globalTerm().toLocaleLowerCase()))
-  ));
+  protected readonly tableCategory = signal<number | null>(null);
+  protected readonly tableCountry = signal('');
+  protected readonly tableWebsiteStatus = signal('');
+  private globalTerm = '';
+  private globalSearchTimer: ReturnType<typeof setTimeout> | null = null;
+  private latestSearchRequest = 0;
+  protected readonly filteredResults = computed(() => this.allResults());
+
+  protected readonly categoryOptions = computed(() => this.options()?.categories ?? []);
+  protected readonly countryOptions = computed(() => this.options()?.countries ?? []);
+  protected readonly stateOptions = computed(() => this.options()?.states ?? []);
+  protected readonly cityOptions = computed(() => this.options()?.cities ?? []);
+  protected readonly websiteStatusOptions = computed(() => this.options()?.websiteStatuses ?? []);
+  protected readonly leadStatusOptions = computed(() => this.options()?.leadStatuses ?? []);
+  protected readonly sourceOptions = computed(() => this.options()?.sources ?? []);
+  protected readonly pageSize = computed(() => this.form.controls.maxResults.value ?? 20);
+
+  ngOnInit(): void { this.loadFilters(); }
+
+  protected loadFilters(): void {
+    this.filtersLoading.set(true);
+    this.error.set(null);
+    this.api.getFilters().subscribe({
+      next: values => { this.options.set(values); this.filtersLoading.set(false); },
+      error: error => { this.error.set(this.api.message(error)); this.filtersLoading.set(false); }
+    });
+  }
 
   protected search(): void {
-    this.form.markAllAsTouched();
-    if (this.form.invalid) return;
-    const filters = this.form.getRawValue() as DiscoveryFilters;
-    this.allResults.set(this.leads.search(filters));
-    this.categoryFilter.set(''); this.countryFilter.set(''); this.websiteFilter.set(''); this.globalTerm.set('');
+    if (this.filtersLoading() || !this.options()) return;
+    this.tableCategory.set(null); this.tableCountry.set(''); this.tableWebsiteStatus.set('');
+    if (this.globalSearchTimer) clearTimeout(this.globalSearchTimer);
+    this.globalTerm = '';
     this.hasSearched.set(true);
+    this.loadPageData(1, this.form.controls.maxResults.value ?? 20, this.sortField(), this.sortOrder() === 1 ? 'asc' : 'desc');
   }
   protected reset(): void {
-    this.form.reset({ country: 'India', region: '', city: '', category: 'All local businesses', keyword: '', websiteStatus: 'All businesses', minimumRating: null, maxResults: 20, source: 'Manual import' });
+    this.form.reset({ country: '', region: '', city: '', categoryId: null, keyword: '', websiteStatus: '', minimumRating: null, maxResults: 20, source: '', statusId: null });
     this.hasSearched.set(false);
     this.allResults.set([]);
-    this.categoryFilter.set(''); this.countryFilter.set(''); this.websiteFilter.set(''); this.globalTerm.set('');
+    this.totalRecords.set(0); this.pageNumber.set(1); this.globalTerm = '';
+    this.latestSearchRequest++;
+    if (this.globalSearchTimer) clearTimeout(this.globalSearchTimer);
+    this.tableCategory.set(null); this.tableCountry.set(''); this.tableWebsiteStatus.set(''); this.error.set(null);
   }
-  protected applyGlobalSearch(event: Event, table: Table): void { const value = (event.target as HTMLInputElement).value; this.globalTerm.set(value); table.filterGlobal(value, 'contains'); }
-  protected setTableFilter(event: Event, field: string): void {
+  protected onLazyLoad(event: TableLazyLoadEvent): void {
+    if (!this.hasSearched()) return;
+    const size = event.rows ?? this.form.controls.maxResults.value ?? 20;
+    const page = Math.floor((event.first ?? 0) / size) + 1;
+    const sort = typeof event.sortField === 'string' ? event.sortField : this.sortField();
+    const order = event.sortOrder === -1 ? 'desc' : 'asc';
+    this.form.controls.maxResults.setValue(size, { emitEvent: false });
+    this.sortField.set(sort); this.sortOrder.set(order === 'asc' ? 1 : -1);
+    this.loadPageData(page, size, sort, order);
+  }
+  protected applyGlobalSearch(event: Event, table: Table): void {
+    this.globalTerm = (event.target as HTMLInputElement).value.trim();
+    table.first = 0;
+    if (this.globalSearchTimer) clearTimeout(this.globalSearchTimer);
+    if (this.hasSearched()) this.globalSearchTimer = setTimeout(() =>
+      this.loadPageData(1, this.form.controls.maxResults.value ?? 20, this.sortField(), this.sortOrder() === 1 ? 'asc' : 'desc'), 300);
+  }
+  protected setTableFilter(event: Event, field: string, table: Table): void {
     const value = (event.target as HTMLSelectElement).value;
-    if (field === 'category') this.categoryFilter.set(value);
-    else if (field === 'country') this.countryFilter.set(value);
-    else this.websiteFilter.set(value);
+    if (field === 'category') this.tableCategory.set(value ? Number(value) : null);
+    else if (field === 'country') this.tableCountry.set(value);
+    else this.tableWebsiteStatus.set(value);
+    table.first = 0;
+    if (this.globalSearchTimer) clearTimeout(this.globalSearchTimer);
+    this.loadPageData(1, this.form.controls.maxResults.value ?? 20, this.sortField(), this.sortOrder() === 1 ? 'asc' : 'desc');
   }
   protected initials(name: string): string { return name.split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase(); }
-  protected exportCsv(): void {
-    const headers = ['Business Name', 'Category', 'Country', 'City', 'Rating', 'Reviews', 'Website Status', 'Website URL', 'Lead Status', 'Source'];
-    const rows = this.filteredResults().map((business) => [business.name, business.category, business.country, business.city, business.rating ?? '', business.reviews ?? '', business.websiteStatus, business.websiteUrl ?? '', business.leadStatus, business.source]);
-    const csv = [headers, ...rows].map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\r\n');
-    const url = URL.createObjectURL(new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8' }));
-    const link = document.createElement('a'); link.href = url; link.download = 'freelance-lead-hunter-demo-businesses.csv'; link.click(); URL.revokeObjectURL(url);
+
+  protected websiteStatusLabel(status: string): string {
+    if (status === 'VERIFIED') return 'Website verified';
+    if (status === 'MISSING' || status === 'NO_WEBSITE') return 'Missing';
+    return status === 'UNVERIFIED' ? 'Unverified' : status;
+  }
+
+  private loadPageData(pageNumber: number, pageSize: number, sortBy: string, sortOrder: 'asc' | 'desc'): void {
+    const form = this.form.getRawValue();
+    const request: BusinessDiscoverySearchRequest = {
+      search: this.globalTerm || undefined, keyword: form.keyword?.trim() || undefined,
+      country: this.tableCountry() || form.country?.trim() || undefined,
+      state: form.region?.trim() || undefined, city: form.city?.trim() || undefined,
+      categoryId: this.tableCategory() ?? form.categoryId ?? undefined,
+      websiteStatus: this.tableWebsiteStatus() || form.websiteStatus || undefined,
+      minRating: form.minimumRating ?? undefined, source: form.source?.trim() || undefined,
+      statusId: form.statusId ?? undefined, pageNumber, pageSize, sortBy, sortOrder
+    };
+    const requestId = ++this.latestSearchRequest;
+    this.loading.set(true); this.error.set(null); this.pageNumber.set(pageNumber);
+    this.api.search(request).subscribe({
+      next: result => {
+        if (requestId !== this.latestSearchRequest) return;
+        this.allResults.set(result.items.map(item => this.toBusiness(item)));
+        this.totalRecords.set(result.totalRecords); this.loading.set(false);
+      },
+      error: error => { if (requestId !== this.latestSearchRequest) return; this.allResults.set([]); this.totalRecords.set(0); this.error.set(this.api.message(error)); this.loading.set(false); }
+    });
+  }
+
+  private toBusiness(lead: BusinessDiscoveryLead): Business {
+    return {
+      id: Number(lead.id), name: lead.businessName, category: lead.categoryName ?? 'Uncategorized',
+      country: lead.country ?? '', region: lead.region ?? '', city: lead.city ?? '',
+      rating: lead.rating, reviews: lead.reviewCount,
+      websiteStatus: lead.websiteStatus === 'VERIFIED' ? 'Verified' : lead.websiteStatus === 'MISSING' || lead.websiteStatus === 'NO_WEBSITE' ? 'No website' : lead.websiteStatus === 'UNVERIFIED' ? 'Unverified' : lead.websiteStatus,
+      websiteUrl: lead.websiteUrl, leadStatus: lead.statusName,
+      source: lead.source ?? 'Unknown source', demo: false
+    };
   }
 }

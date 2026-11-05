@@ -1,6 +1,6 @@
-export type WebsiteStatus = 'Unverified' | 'Verified' | 'No website';
-export type LeadStatus = 'New' | 'Qualified' | 'Contacted' | 'Interested';
-export type DiscoverySource = 'Manual import' | 'Google Maps' | 'OpenStreetMap';
+export type WebsiteStatus = string;
+export type LeadStatus = string;
+export type DiscoverySource = string;
 
 export interface Business {
   id: number;
@@ -15,7 +15,7 @@ export interface Business {
   websiteUrl: string | null;
   leadStatus: LeadStatus;
   source: DiscoverySource;
-  demo: true;
+  demo: boolean;
 }
 
 export interface DiscoveryFilters {
